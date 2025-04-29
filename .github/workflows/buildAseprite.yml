@@ -1,0 +1,64 @@
+name: Build Aseprite
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04  # 使用更新的系统环境
+
+    steps:
+      # 1. 拉取代码（含子模块）
+      - name: Checkout Aseprite
+        uses: actions/checkout@v4
+        with:
+          repository: aseprite/aseprite
+          submodules: recursive  # 关键！确保拉取 Skia 子模块
+
+      # 2. 安装系统依赖
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            ninja-build \
+            g++ \
+            libx11-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libgl1-mesa-dev \
+            libfontconfig1-dev
+
+      # 3. 安装 vcpkg 和 Skia
+      - name: Setup vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git
+          ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+          ./vcpkg/vcpkg install skia
+
+      # 4. 构建 Aseprite
+      - name: Build with CMake
+        run: |
+          mkdir build && cd build
+          cmake -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake \
+            ..
+          ninja
+
+      # 5. 打包成 ZIP（包含可执行文件和必要资源）
+      - name: Package Artifacts
+        run: |
+          mkdir -p aseprite-dist/bin
+          cp build/bin/aseprite aseprite-dist/bin/
+          cp -r build/data aseprite-dist/
+          cd aseprite-dist && zip -r ../aseprite-dist.zip ./
+
+      # 6. 上传构建产物（使用 upload-artifact@v4）
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4  # 使用最新稳定版
+        with:
+          name: aseprite-dist
+          path: aseprite-dist.zip
